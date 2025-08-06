@@ -1,0 +1,38 @@
+.dashboard {
+    color:#fcfcfc;
+    display: flex;
+    height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f8f9fc;
+}
+
+.error-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    background: #ffcccc;
+    color: #900;
+    padding: 10px;
+    width: 100%;
+    text-align: center;
+    z-index: 1000;
+    font-weight: bold;
+}
+
+.notifications {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 2000;
+}
+
+.notification {
+    background: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
+}

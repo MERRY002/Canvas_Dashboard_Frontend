@@ -1,0 +1,57 @@
+.sidebar {
+    color:#fcfcfc;
+    width: 250px;
+    background: rgb(17, 17, 17);
+    border-right: 1px solid #ddd;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar h2 {
+    font-size: 30px;
+    margin-bottom: 15px;
+    color: #ffffff;
+}
+
+.connected-users {
+    flex-grow: 1;
+    margin-bottom: 20px;
+}
+
+.connected-users ul {
+    list-style: none;
+    padding: 0;
+}
+
+.connected-users li {
+    padding: 6px 0;
+    border-bottom: 1px solid #f1f1f1;
+    font-size: 14px;
+}
+
+.room-controls button {
+    display: block;
+    width: 100%;
+    margin: 6px 0;
+    padding: 10px;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    background: #6c63ff;
+    color: white;
+    font-size: 14px;
+    transition: background 0.3s;
+}
+
+.room-controls button:hover {
+    background: #5a54d1;
+}
+
+.leave-btn {
+    background: #e63946;
+}
+
+.leave-btn:hover {
+    background: #b92d39;
+}
