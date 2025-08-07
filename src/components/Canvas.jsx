@@ -1,75 +1,98 @@
-import React, { useState, useEffect } from "react";
-import ReactFlow, {
+import React, { useState, useRef } from "react";
+import {ReactFlow,
     MiniMap,
     Controls,
     Background,
     applyNodeChanges,
-    useReactFlow
 } from "reactflow";
 import "reactflow/dist/style.css";
 import "./canvas.css";
 
 export default function Canvas({ nodes, setNodes, socket, roomId }) {
     const [menu, setMenu] = useState({ visible: false, x: 0, y: 0, nodeId: null });
-    const { project } = useReactFlow();
-    useEffect(() => {
-        if (!socket) return;
-        socket.on("update-nodes", (data) => {
-            setNodes(data);
-        });
-        return () => socket.off("update-nodes");
-    }, [socket, setNodes]);
-    const onCanvasDoubleClick = (event, flowEvent) => {
-        if (flowEvent?.node) return;
+    const reactFlowWrapper = useRef(null);
 
-        const flowPosition = project({ x: event.clientX, y: event.clientY });
-        const id = `${+new Date()}`;
+    // Handle node changes (position, rename label, etc.)
+    const onNodesChange = (changes) => {
+        const updated = applyNodeChanges(changes, nodes);
+        setNodes(updated);
+        socket.emit("node-update", { roomId, nodes: updated });
+    };
+
+    // Add new node on double click
+    const onPaneDoubleClick = (event) => {
+        const bounds = reactFlowWrapper.current.getBoundingClientRect();
+        const position = {
+            x: event.clientX - bounds.left - 75,
+            y: event.clientY - bounds.top - 25
+        };
+        const id = `node-${Date.now()}`;
         const newNode = {
             id,
-            type: "default",
             data: { label: `Node ${id}` },
-            position: flowPosition
+            position
         };
-
-        const updatedNodes = [...nodes, newNode];
-        setNodes(updatedNodes);
-        socket.emit("node-update", { roomId, nodes: updatedNodes });
+        const updated = [...nodes, newNode];
+        setNodes(updated);
+        socket.emit("node-update", { roomId, nodes: updated });
     };
 
-    const onNodesChange = (changes) => {
-        const updatedNodes = applyNodeChanges(changes, nodes);
-        setNodes(updatedNodes);
-        socket.emit("node-update", { roomId, nodes: updatedNodes });
-    };
-
+    // Right click to open context menu
     const onNodeContextMenu = (event, node) => {
         event.preventDefault();
-        setMenu({ visible: true, x: event.clientX, y: event.clientY, nodeId: node.id });
+        setMenu({
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            nodeId: node.id
+        });
     };
 
+    // Rename node
     const handleRename = () => {
-        const newLabel = prompt("Enter new label", "");
-        if (newLabel) {
-            socket.emit("node-rename", { roomId, nodeId: menu.nodeId, newLabel });
+        const newLabel = prompt("Enter new label");
+        if (newLabel && newLabel.trim()) {
+            const updated = nodes.map((n) =>
+                n.id === menu.nodeId ? { ...n, data: { ...n.data, label: newLabel } } : n
+            );
+            setNodes(updated);
+            socket.emit("node-update", { roomId, nodes: updated });
         }
         setMenu({ ...menu, visible: false });
     };
 
+    // Delete node
     const handleDelete = () => {
-        socket.emit("node-delete", { roomId, nodeId: menu.nodeId });
+        const updated = nodes.filter((n) => n.id !== menu.nodeId);
+        setNodes(updated);
+        socket.emit("node-update", { roomId, nodes: updated });
         setMenu({ ...menu, visible: false });
     };
 
+    // Hide context menu when clicking elsewhere
+    const handleClickOutside = () => {
+        if (menu.visible) {
+            setMenu({ ...menu, visible: false });
+        }
+    };
+
     return (
-        <div className="canvas-container">
+        <div
+            style={{ height: "100%", width: "100%" }}
+            ref={reactFlowWrapper}
+            onClick={handleClickOutside}
+        >
             <ReactFlow
                 nodes={nodes}
                 onNodesChange={onNodesChange}
+                onPaneDoubleClick={onPaneDoubleClick}
                 onNodeContextMenu={onNodeContextMenu}
-                onDoubleClick={onCanvasDoubleClick}
+                zoomOnScroll={false}
+                zoomOnDoubleClick={false}
+                panOnScroll
                 fitView
             >
-                <MiniMap />
+                <MiniMap zoomable pannable />
                 <Controls />
                 <Background />
             </ReactFlow>
