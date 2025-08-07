@@ -1,111 +1,216 @@
-import React, { useState, useRef } from "react";
-import {ReactFlow,
-    MiniMap,
-    Controls,
-    Background,
-    applyNodeChanges,
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from "react";
+import ReactFlow, {
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  MiniMap,
+  Controls,
+  Background,
+  MarkerType,
+  ConnectionLineType,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import "./canvas.css";
+import { io } from "socket.io-client";
+import { nanoid } from "nanoid";
 
-export default function Canvas({ nodes, setNodes, socket, roomId }) {
-    const [menu, setMenu] = useState({ visible: false, x: 0, y: 0, nodeId: null });
-    const reactFlowWrapper = useRef(null);
+const socket = io("https://canvas-dashboard-frontend.vercel.app");
 
-    // Handle node changes (position, rename label, etc.)
-    const onNodesChange = (changes) => {
-        const updated = applyNodeChanges(changes, nodes);
-        setNodes(updated);
-        socket.emit("node-update", { roomId, nodes: updated });
-    };
+let id = 0;
+const getId = () => `node_${id++}`;
 
-    // Add new node on double click
-    const onPaneDoubleClick = (event) => {
+const defaultNode = {
+  id: getId(),
+  data: { label: "Node 0" },
+  position: { x: 250, y: 5 },
+  type: "default",
+};
+
+const Canvas = () => {
+  const reactFlowWrapper = useRef(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState([defaultNode]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [connectingNodeId, setConnectingNodeId] = useState(null);
+  
+
+  // Node creation on double-click
+  const onDoubleClick = useCallback(
+    (event) => {
+      if (!reactFlowInstance) return;
+      const bounds = reactFlowWrapper.current.getBoundingClientRect();
+      const position = reactFlowInstance.project({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+      const newNode = {
+        id: getId(),
+        data: { label: `Node ${id}` },
+        position,
+        type: "default",
+      };
+      setNodes((nds) => [...nds, newNode]);
+      socket.emit("add-node", newNode);
+    },
+    [reactFlowInstance]
+  );
+
+  // Right-click context menu
+  const onNodeContextMenu = useCallback((event, node) => {
+    event.preventDefault();
+    setSelectedNodeId(node.id);
+    setContextMenu({
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
+  }, []);
+
+  const handleRename = () => {
+    const newLabel = prompt("Enter new name:");
+    if (newLabel) {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === selectedNodeId
+            ? { ...node, data: { ...node.data, label: newLabel } }
+            : node
+        )
+      );
+    }
+    setContextMenu(null);
+  };
+
+  const handleDelete = () => {
+    setNodes((nds) => nds.filter((node) => node.id !== selectedNodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    setContextMenu(null);
+  };
+
+  // Edge between existing nodes
+  const onConnect = useCallback(
+    (params) => {
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            markerEnd: { type: MarkerType.ArrowClosed },
+            type: ConnectionLineType.SmoothStep,
+          },
+          eds
+        )
+      );
+    },
+    [setEdges]
+  );
+
+  // Store source node when dragging starts
+  const onConnectStart = useCallback((_, { nodeId }) => {
+    setConnectingNodeId(nodeId);
+  }, []);
+
+  // Handle edge to empty canvas to create new node
+  const onConnectEnd = useCallback(
+    (event) => {
+      const targetIsPane = event.target.classList.contains("react-flow__pane");
+      if (targetIsPane && reactFlowInstance && connectingNodeId) {
         const bounds = reactFlowWrapper.current.getBoundingClientRect();
-        const position = {
-            x: event.clientX - bounds.left - 75,
-            y: event.clientY - bounds.top - 25
-        };
-        const id = `node-${Date.now()}`;
-        const newNode = {
-            id,
-            data: { label: `Node ${id}` },
-            position
-        };
-        const updated = [...nodes, newNode];
-        setNodes(updated);
-        socket.emit("node-update", { roomId, nodes: updated });
-    };
-
-    // Right click to open context menu
-    const onNodeContextMenu = (event, node) => {
-        event.preventDefault();
-        setMenu({
-            visible: true,
-            x: event.clientX,
-            y: event.clientY,
-            nodeId: node.id
+        const position = reactFlowInstance.project({
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top,
         });
-    };
 
-    // Rename node
-    const handleRename = () => {
-        const newLabel = prompt("Enter new label");
-        if (newLabel && newLabel.trim()) {
-            const updated = nodes.map((n) =>
-                n.id === menu.nodeId ? { ...n, data: { ...n.data, label: newLabel } } : n
-            );
-            setNodes(updated);
-            socket.emit("node-update", { roomId, nodes: updated });
-        }
-        setMenu({ ...menu, visible: false });
-    };
+        const newNodeId = getId();
+        const newNode = {
+          id: newNodeId,
+          data: { label: `Node ${id}` },
+          position,
+          type: "default",
+        };
 
-    // Delete node
-    const handleDelete = () => {
-        const updated = nodes.filter((n) => n.id !== menu.nodeId);
-        setNodes(updated);
-        socket.emit("node-update", { roomId, nodes: updated });
-        setMenu({ ...menu, visible: false });
-    };
+        setNodes((nds) => [...nds, newNode]);
+        setEdges((eds) => [
+          ...eds,
+          {
+            id: `e${connectingNodeId}-${newNodeId}`,
+            source: connectingNodeId,
+            target: newNodeId,
+            markerEnd: { type: MarkerType.ArrowClosed },
+            type: ConnectionLineType.SmoothStep,
+          },
+        ]);
+      }
+      setConnectingNodeId(null);
+    },
+    [reactFlowInstance, connectingNodeId]
+  );
 
-    // Hide context menu when clicking elsewhere
-    const handleClickOutside = () => {
-        if (menu.visible) {
-            setMenu({ ...menu, visible: false });
-        }
-    };
+  // Socket listeners for real-time sync
+  useEffect(() => {
+    socket.on("add-node", (node) => {
+      setNodes((nds) => [...nds, node]);
+    });
 
-    return (
+    return () => {
+      socket.off("add-node");
+    };
+  }, [setNodes]);
+
+  return (
+    <div
+      style={{ width: "100vw", height: "100vh" }}
+      ref={reactFlowWrapper}
+      onDoubleClick={onDoubleClick}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onInit={setReactFlowInstance}
+        onNodeContextMenu={onNodeContextMenu}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
+        zoomOnDoubleClick={false}
+        fitView
+      >
+        <MiniMap></MiniMap>
+        <Background />
+        <Controls />
+      </ReactFlow>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
         <div
-            style={{ height: "100%", width: "100%" }}
-            ref={reactFlowWrapper}
-            onClick={handleClickOutside}
+          style={{
+            position: "absolute",
+            top: contextMenu.mouseY,
+            left: contextMenu.mouseX,
+            backgroundColor: "white",
+            border: "1px solid #ccc",
+            padding: "8px",
+            borderRadius: "4px",
+            zIndex: 1000,
+            color: "black", // Text color for visibility
+            boxShadow: "0px 2px 6px rgba(0,0,0,0.2)",
+          }}
         >
-            <ReactFlow
-                nodes={nodes}
-                onNodesChange={onNodesChange}
-                onPaneDoubleClick={onPaneDoubleClick}
-                onNodeContextMenu={onNodeContextMenu}
-                zoomOnScroll={false}
-                zoomOnDoubleClick={false}
-                panOnScroll
-                fitView
-            >
-                <MiniMap zoomable pannable />
-                <Controls />
-                <Background />
-            </ReactFlow>
-
-            {menu.visible && (
-                <div
-                    className="context-menu"
-                    style={{ top: menu.y, left: menu.x }}
-                >
-                    <div onClick={handleRename}>Rename</div>
-                    <div onClick={handleDelete}>Delete</div>
-                </div>
-            )}
+          <div style={{ padding: "4px", cursor: "pointer" }} onClick={handleRename}>
+            Rename
+          </div>
+          <div style={{ padding: "4px", cursor: "pointer" }} onClick={handleDelete}>
+            Delete
+          </div>
         </div>
-    );
-}
+      )}
+    </div>
+  );
+};
+
+export default Canvas;
