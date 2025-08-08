@@ -1,14 +1,8 @@
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useMemo,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
-  useNodesState,
-  useEdgesState,
   addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
   MiniMap,
   Controls,
   Background,
@@ -16,53 +10,41 @@ import ReactFlow, {
   ConnectionLineType,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { io } from "socket.io-client";
-import { nanoid } from "nanoid";
-
-const socket = io("https://canvas-dashboard-frontend.vercel.app");
 
 let id = 0;
 const getId = () => `node_${id++}`;
 
-const defaultNode = {
-  id: getId(),
-  data: { label: "Node 0" },
-  position: { x: 250, y: 5 },
-  type: "default",
-};
-
-const Canvas = () => {
+const Canvas = ({ nodes, edges, setNodes, setEdges, socket, roomId }) => {
   const reactFlowWrapper = useRef(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState([defaultNode]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [connectingNodeId, setConnectingNodeId] = useState(null);
-  
 
-  // Node creation on double-click
   const onDoubleClick = useCallback(
     (event) => {
       if (!reactFlowInstance) return;
+
       const bounds = reactFlowWrapper.current.getBoundingClientRect();
       const position = reactFlowInstance.project({
         x: event.clientX - bounds.left,
         y: event.clientY - bounds.top,
       });
+
       const newNode = {
         id: getId(),
         data: { label: `Node ${id}` },
         position,
         type: "default",
       };
-      setNodes((nds) => [...nds, newNode]);
-      socket.emit("add-node", newNode);
+
+      const updatedNodes = [...nodes, newNode];
+      setNodes(updatedNodes);
+      socket.emit("addNode", { node: newNode, roomId }); // 🔌 Emit new node
     },
-    [reactFlowInstance]
+    [reactFlowInstance, nodes, setNodes, socket, roomId]
   );
 
-  // Right-click context menu
   const onNodeContextMenu = useCallback((event, node) => {
     event.preventDefault();
     setSelectedNodeId(node.id);
@@ -75,46 +57,46 @@ const Canvas = () => {
   const handleRename = () => {
     const newLabel = prompt("Enter new name:");
     if (newLabel) {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === selectedNodeId
-            ? { ...node, data: { ...node.data, label: newLabel } }
-            : node
-        )
+      const updatedNodes = nodes.map((node) =>
+        node.id === selectedNodeId
+          ? { ...node, data: { ...node.data, label: newLabel } }
+          : node
       );
+      setNodes(updatedNodes);
+      socket.emit("updateNodes", { nodes: updatedNodes, roomId }); // 🔌 Emit rename
     }
     setContextMenu(null);
   };
 
   const handleDelete = () => {
-    setNodes((nds) => nds.filter((node) => node.id !== selectedNodeId));
-    setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    const updatedNodes = nodes.filter((node) => node.id !== selectedNodeId);
+    const updatedEdges = edges.filter(
+      (e) => e.source !== selectedNodeId && e.target !== selectedNodeId
+    );
+    setNodes(updatedNodes);
+    setEdges(updatedEdges);
+    socket.emit("deleteNode", { nodeId: selectedNodeId, roomId }); // 🔌 Emit delete
     setContextMenu(null);
   };
 
-  // Edge between existing nodes
   const onConnect = useCallback(
     (params) => {
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            markerEnd: { type: MarkerType.ArrowClosed },
-            type: ConnectionLineType.SmoothStep,
-          },
-          eds
-        )
-      );
+      const edge = {
+        ...params,
+        markerEnd: { type: MarkerType.ArrowClosed },
+        type: ConnectionLineType.SmoothStep,
+      };
+      const updatedEdges = addEdge(edge, edges);
+      setEdges(updatedEdges);
+      socket.emit("addEdge", { edge, roomId }); // 🔌 Emit new edge
     },
-    [setEdges]
+    [edges, setEdges, socket, roomId]
   );
 
-  // Store source node when dragging starts
   const onConnectStart = useCallback((_, { nodeId }) => {
     setConnectingNodeId(nodeId);
   }, []);
 
-  // Handle edge to empty canvas to create new node
   const onConnectEnd = useCallback(
     (event) => {
       const targetIsPane = event.target.classList.contains("react-flow__pane");
@@ -133,33 +115,61 @@ const Canvas = () => {
           type: "default",
         };
 
-        setNodes((nds) => [...nds, newNode]);
-        setEdges((eds) => [
-          ...eds,
-          {
-            id: `e${connectingNodeId}-${newNodeId}`,
-            source: connectingNodeId,
-            target: newNodeId,
-            markerEnd: { type: MarkerType.ArrowClosed },
-            type: ConnectionLineType.SmoothStep,
-          },
-        ]);
+        const newEdge = {
+          id: `e${connectingNodeId}-${newNodeId}`,
+          source: connectingNodeId,
+          target: newNodeId,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          type: ConnectionLineType.SmoothStep,
+        };
+
+        const updatedNodes = [...nodes, newNode];
+        const updatedEdges = [...edges, newEdge];
+
+        setNodes(updatedNodes);
+        setEdges(updatedEdges);
+
+        socket.emit("addNode", { node: newNode, roomId }); // 🔌 Emit new node
+        socket.emit("addEdge", { edge: newEdge, roomId }); // 🔌 Emit new edge
       }
       setConnectingNodeId(null);
     },
-    [reactFlowInstance, connectingNodeId]
+    [reactFlowInstance, connectingNodeId, nodes, edges, setNodes, setEdges, socket, roomId]
   );
 
-  // Socket listeners for real-time sync
+  // 🔁 Apply incoming changes from socket
   useEffect(() => {
-    socket.on("add-node", (node) => {
-      setNodes((nds) => [...nds, node]);
+    if (!socket) return;
+
+    socket.on("syncNodes", (incomingNodes) => {
+      setNodes(incomingNodes);
+    });
+
+    socket.on("syncEdges", (incomingEdges) => {
+      setEdges(incomingEdges);
+    });
+
+    socket.on("nodeAdded", ({ node }) => {
+      setNodes((prev) => [...prev, node]);
+    });
+
+    socket.on("edgeAdded", ({ edge }) => {
+      setEdges((prev) => [...prev, edge]);
+    });
+
+    socket.on("nodeDeleted", ({ nodeId }) => {
+      setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+      setEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
     });
 
     return () => {
-      socket.off("add-node");
+      socket.off("syncNodes");
+      socket.off("syncEdges");
+      socket.off("nodeAdded");
+      socket.off("edgeAdded");
+      socket.off("nodeDeleted");
     };
-  }, [setNodes]);
+  }, [socket]);
 
   return (
     <div
@@ -170,8 +180,16 @@ const Canvas = () => {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        onNodesChange={(changes) => {
+          const updated = applyNodeChanges(changes, nodes);
+          setNodes(updated);
+          socket.emit("updateNodes", { nodes: updated, roomId }); // 🔌 Emit move/drag
+        }}
+        onEdgesChange={(changes) => {
+          const updated = applyEdgeChanges(changes, edges);
+          setEdges(updated);
+          socket.emit("updateEdges", { edges: updated, roomId }); // 🔌 Emit edge changes
+        }}
         onConnect={onConnect}
         onInit={setReactFlowInstance}
         onNodeContextMenu={onNodeContextMenu}
@@ -180,12 +198,11 @@ const Canvas = () => {
         zoomOnDoubleClick={false}
         fitView
       >
-        <MiniMap></MiniMap>
+        <MiniMap />
         <Background />
         <Controls />
       </ReactFlow>
 
-      {/* Right-click context menu */}
       {contextMenu && (
         <div
           style={{
@@ -197,7 +214,7 @@ const Canvas = () => {
             padding: "8px",
             borderRadius: "4px",
             zIndex: 1000,
-            color: "black", // Text color for visibility
+            color: "black",
             boxShadow: "0px 2px 6px rgba(0,0,0,0.2)",
           }}
         >

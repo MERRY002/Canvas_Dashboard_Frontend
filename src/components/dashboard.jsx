@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import io from "socket.io-client";
 import Sidebar from "./Sidebar";
-import Canvas from "./Canvas";
+import Canvas from "./Canvas.jsx";
 import { ReactFlowProvider } from "reactflow";
 import "./dashboard.css";
 
@@ -40,8 +40,8 @@ export default function Dashboard() {
     socket.on("user-joined", (name) => showNotification(`${name} joined the room`));
     socket.on("user-left", (name) => showNotification(`${name} left the room`));
 
-    socket.on("update-nodes", (data) => setNodes(data));
-    socket.on("update-edges", (data) => setEdges(data));
+    socket.on("syncNodes", (data) => setNodes(data));
+    socket.on("syncEdges", (data) => setEdges(data));
 
     return () => {
       socket.disconnect();
