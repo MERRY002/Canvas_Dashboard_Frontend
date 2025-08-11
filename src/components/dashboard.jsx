@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import io from "socket.io-client";
-import Sidebar from "./Sidebar";
+import Sidebar from "./Sidebar.jsx";
 import Canvas from "./Canvas.jsx";
 import { ReactFlowProvider } from "reactflow";
-import "./dashboard.css";
+import "../styles/dashboard.css";
 
 const socket = io(process.env.REACT_APP_BACKEND_URL, {
   reconnectionAttempts: 5,

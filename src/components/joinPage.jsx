@@ -1,6 +1,6 @@
 import React, {useState} from "react";
 import {useNavigate} from "react-router-dom";
-import "./join.css";
+import "../styles/join.css";
 
 export default function JoinPage(){
     const [roomId, setRoomId]=useState("");
@@ -13,7 +13,7 @@ export default function JoinPage(){
             setError("Both Room ID and Username are required!");
             return;
         }
-        navigate(`/dashboard?room=${roomId}&user=${username}`);
+        navigate(`/Dashboard?room=${roomId}&user=${username}`);
     };
     const createNewRoom =()=>{
         const id=Math.random().toString(36).substring(2,6);

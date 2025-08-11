@@ -1,10 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import "./components/App.css";
-import "./components/dashboard.css";
-import "./components/join.css";
-import "./components/canvas.css";
+import "./styles/App.css";
+import "./styles/dashboard.css";
+import "./styles/join.css";
+import "./styles/canvas.css";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
